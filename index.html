@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101820">
+  <title>Route Lab</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101820;
+      --panel: rgba(16, 24, 32, .94);
+      --text: #f5f7fa;
+      --muted: #a8b3bd;
+      --accent: #b8ff5c;
+      --line: rgba(255,255,255,.13);
+      --danger: #ff7777;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    #map { position: fixed; inset: 0; z-index: 0; background: #dce4e8; }
+    .topbar {
+      position: fixed; z-index: 500; top: max(12px, env(safe-area-inset-top)); left: 14px; right: 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 13px 15px; border: 1px solid var(--line); border-radius: 18px;
+      background: var(--panel); box-shadow: 0 8px 30px rgba(0,0,0,.22); backdrop-filter: blur(16px);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .logo { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border-radius: 12px; color: #101820; background: var(--accent); font-size: 20px; font-weight: 900; }
+    h1 { margin: 0; font-size: 17px; line-height: 1.1; letter-spacing: -.35px; }
+    .subtitle { margin-top: 4px; color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+    .status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #78838d; }
+    .dot.live { background: var(--accent); box-shadow: 0 0 0 4px rgba(184,255,92,.13); }
+    .bottom-panel {
+      position: fixed; z-index: 500; left: 14px; right: 14px; bottom: max(14px, env(safe-area-inset-bottom));
+      padding: 17px; border: 1px solid var(--line); border-radius: 22px; background: var(--panel);
+      box-shadow: 0 10px 36px rgba(0,0,0,.26); backdrop-filter: blur(18px);
+    }
+    .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+    .eyebrow { color: var(--muted); font-size: 10px; letter-spacing: .13em; text-transform: uppercase; }
+    .gps-state { font-size: 12px; color: var(--accent); }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .metric { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.045); }
+    .metric-label { color: var(--muted); font-size: 11px; margin-bottom: 7px; }
+    .metric-value { font-size: clamp(15px, 4.4vw, 19px); font-weight: 650; letter-spacing: -.45px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .unit { color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: 0; }
+    .actions { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 13px; }
+    button { min-height: 50px; border: 0; border-radius: 14px; font: inherit; font-weight: 750; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    button:focus-visible { outline: 3px solid white; outline-offset: 3px; }
+    #startBtn { color: #101820; background: var(--accent); }
+    #startBtn:disabled { opacity: .55; cursor: wait; }
+    #recenterBtn { padding: 0 17px; color: var(--text); background: rgba(255,255,255,.1); border: 1px solid var(--line); }
+    #message { margin: 12px 2px 0; min-height: 16px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    #message.error { color: var(--danger); }
+    .leaflet-control-attribution { font-size: 9px !important; }
+    .leaflet-control-zoom { margin-bottom: 250px !important; border: 0 !important; box-shadow: 0 3px 14px #0002 !important; }
+    .leaflet-control-zoom a { color: #101820 !important; }
+    .user-marker { width: 20px; height: 20px; border: 3px solid white; border-radius: 50%; background: #2878ff; box-shadow: 0 0 0 7px rgba(40,120,255,.2), 0 2px 10px #0005; }
+    @media (min-width: 700px) {
+      .topbar { left: 24px; right: 24px; max-width: 420px; }
+      .bottom-panel { left: 24px; bottom: 24px; width: 390px; right: auto; }
+      .leaflet-control-zoom { margin-bottom: 20px !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="map" aria-label="Map showing your current GPS location"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">↗</div>
+      <div>
+        <h1>Route Lab</h1>
+        <div class="subtitle">Live location tracker</div>
+      </div>
+    </div>
+    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Not started</span></div>
+  </header>
+
+  <section class="bottom-panel" aria-label="GPS details">
+    <div class="panel-heading">
+      <div class="eyebrow">Live GPS telemetry</div>
+      <div id="gpsState" class="gps-state">Ready when you are</div>
+    </div>
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-label">LATITUDE</div>
+        <div id="latitude" class="metric-value">—</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">LONGITUDE</div>
+        <div id="longitude" class="metric-value">—</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">GPS ACCURACY</div>
+        <div class="metric-value"><span id="accuracy">—</span> <span class="unit">m</span></div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">LAST UPDATE</div>
+        <div id="updated" class="metric-value">—</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="startBtn" type="button">Start tracking</button>
+      <button id="recenterBtn" type="button" aria-label="Center map on my location">◎ Recenter</button>
+    </div>
+    <p id="message" role="status" aria-live="polite">Tap Start tracking and allow location access when your browser asks.</p>
+  </section>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    (() => {
+      const $ = (id) => document.getElementById(id);
+      const map = L.map('map', { zoomControl: true, attributionControl: true }).setView([25.0330, 121.5654], 13);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      const markerIcon = L.divIcon({
+        className: '',
+        html: '<div class="user-marker"></div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+      });
+
+      let watchId = null;
+      let marker = null;
+      let accuracyCircle = null;
+      let lastPosition = null;
+      let hasCentered = false;
+
+      function setMessage(message, isError = false) {
+        $('message').textContent = message;
+        $('message').classList.toggle('error', isError);
+      }
+
+      function setTrackingUI(active) {
+        $('statusDot').classList.toggle('live', active);
+        $('statusText').textContent = active ? 'Tracking live' : 'Not started';
+        $('startBtn').textContent = active ? 'Stop tracking' : 'Start tracking';
+        $('gpsState').textContent = active ? 'Waiting for GPS…' : 'Ready when you are';
+      }
+
+      function onPosition(position) {
+        const { latitude, longitude, accuracy } = position.coords;
+        const latlng = [latitude, longitude];
+        lastPosition = latlng;
+
+        $('latitude').textContent = latitude.toFixed(6);
+        $('longitude').textContent = longitude.toFixed(6);
+        $('accuracy').textContent = Number.isFinite(accuracy) ? Math.round(accuracy) : '—';
+        $('updated').textContent = new Date(position.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        $('gpsState').textContent = 'GPS fix received';
+        $('statusText').textContent = 'Tracking live';
+        $('statusDot').classList.add('live');
+        setMessage(accuracy <= 20 ? 'Location updated. GPS accuracy is looking good.' : 'Location updated. Accuracy may improve as your device gets a better GPS fix.');
+
+        if (!marker) {
+          marker = L.marker(latlng, { icon: markerIcon, title: 'Your current location' }).addTo(map);
+          accuracyCircle = L.circle(latlng, {
+            radius: accuracy || 0,
+            color: '#2878ff',
+            weight: 1.5,
+            opacity: .75,
+            fillColor: '#2878ff',
+            fillOpacity: .12
+          }).addTo(map);
+        } else {
+          marker.setLatLng(latlng);
+          accuracyCircle.setLatLng(latlng);
+          accuracyCircle.setRadius(accuracy || 0);
+        }
+
+        // Follow the live position, while allowing the user to zoom or pan between GPS updates.
+        map.panTo(latlng, { animate: true, duration: 0.45 });
+        hasCentered = true;
+      }
+
+      function onError(error) {
+        let message = 'Unable to get your location.';
+        if (error.code === 1) message = 'Location permission was denied. Allow location access in your browser settings, then try again.';
+        if (error.code === 2) message = 'Your location is currently unavailable. Check Location Services and try again.';
+        if (error.code === 3) message = 'GPS took too long to respond. Keep tracking on and try moving to an area with a clearer sky.';
+        setMessage(message, true);
+        $('gpsState').textContent = 'GPS unavailable';
+        if (watchId !== null && error.code === 1) {
+          navigator.geolocation.clearWatch(watchId);
+          watchId = null;
+          setTrackingUI(false);
+        }
+      }
+
+      function startTracking() {
+        if (!('geolocation' in navigator)) {
+          setMessage('This browser does not support geolocation. Try the latest Safari or Chrome on your phone.', true);
+          return;
+        }
+        if (!window.isSecureContext) {
+          setMessage('GPS requires a secure HTTPS page. Publish this app with GitHub Pages, then open its https:// URL.', true);
+          return;
+        }
+        setTrackingUI(true);
+        $('startBtn').disabled = true;
+        setMessage('Requesting location permission…');
+        watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+          enableHighAccuracy: true,
+          maximumAge: 1000,
+          timeout: 20000
+        });
+        $('startBtn').disabled = false;
+      }
+
+      function stopTracking() {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        setTrackingUI(false);
+        $('gpsState').textContent = lastPosition ? 'Tracking paused' : 'Ready when you are';
+        setMessage(lastPosition ? 'Tracking paused. Your last position remains on the map.' : 'Tracking stopped.');
+      }
+
+      $('startBtn').addEventListener('click', () => {
+        if (watchId !== null) stopTracking();
+        else startTracking();
+      });
+
+      $('recenterBtn').addEventListener('click', () => {
+        if (lastPosition) {
+          map.setView(lastPosition, Math.max(map.getZoom(), 16), { animate: true });
+          hasCentered = true;
+        } else {
+          setMessage('Tap Start tracking first to get your current location.');
+        }
+      });
+
+      // Correct Leaflet sizing after mobile browser chrome and safe-area layout settle.
+      window.addEventListener('resize', () => map.invalidateSize());
+      window.addEventListener('orientationchange', () => setTimeout(() => map.invalidateSize(), 250));
+      setTimeout(() => map.invalidateSize(), 200);
+    })();
+  </script>
+</body>
+</html>
